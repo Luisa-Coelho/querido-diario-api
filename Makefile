@@ -12,6 +12,7 @@ OPENSEARCH_PORT2 ?= 9300
 POD_NAME ?= querido-diario
 DATABASE_CONTAINER_NAME ?= $(POD_NAME)-db
 OPENSEARCH_CONTAINER_NAME ?= $(POD_NAME)-opensearch
+OTEL_COLLECTOR_CONTAINER_NAME ?= $(POD_NAME)-otel-collector
 # Database info user to run the tests
 POSTGRES_USER ?= companies
 POSTGRES_PASSWORD ?= companies
@@ -23,6 +24,7 @@ DATABASE_RESTORE_FILE ?= contrib/data/queridodiariodb.tar
 # Run integration tests. Run local opensearch to validate the iteration
 RUN_INTEGRATION_TESTS ?= 0
 
+OTEL_COLLECTOR_PORT := 4317
 API_PORT := 8080
 
 run-command=(podman run --rm -ti --volume $(PWD):/mnt/code:rw \
@@ -76,6 +78,7 @@ create-pod: setup-environment destroy-pod
 	  --publish $(POSTGRES_PORT):$(POSTGRES_PORT) \
 	  --publish $(OPENSEARCH_PORT1):$(OPENSEARCH_PORT1) \
 	  --publish $(OPENSEARCH_PORT2):$(OPENSEARCH_PORT2) \
+	  --publish $(OTEL_COLLECTOR_PORT):$(OTEL_COLLECTOR_PORT) \
 	  --name $(POD_NAME)
 
 .PHONY: setup-environment
@@ -124,7 +127,7 @@ shell:
 		bash
 
 .PHONY: run
-run: create-pod opensearch database re-run
+run: create-pod opensearch database otel-collector load-data re-run
 
 .PHONY:load-data
 load-data:
@@ -132,7 +135,7 @@ load-data:
 
 .PHONY: re-run
 re-run: setup-environment wait-opensearch wait-database
-	$(call run-command, python main)
+	$(call run-command, opentelemetry-instrument python main)
 
 .PHONY: runshell
 runshell:
@@ -182,3 +185,23 @@ else
 	@echo "cannot restore because file does not exists '$(DATABASE_RESTORE_FILE)'"
 	@exit 1
 endif
+
+.PHONY: otel-collector
+otel-collector: stop-otel-collector start-otel-collector wait-otel-collector
+
+start-otel-collector:
+	podman run -d --rm -ti \
+		--name $(OTEL_COLLECTOR_CONTAINER_NAME) \
+		--pod $(POD_NAME) \
+		--volume $(PWD)/config/otel-collector-config.yaml:/etc/otel-collector-config.yaml \
+		docker.io/otel/opentelemetry-collector-contrib:0.97.0 "--config=/etc/otel-collector-config.yaml"
+
+stop-otel-collector:
+	podman rm --force --ignore $(OTEL_COLLECTOR_CONTAINER_NAME)
+
+wait-otel-collector:
+	$(call wait-for, localhost:4317)
+
+otel-auto-instrumentation-list:
+	@echo "These packages were detected and can be auto-instrumented (maybe add/update them in requirements.txt):"
+	@$(call run-command, opentelemetry-bootstrap -a requirements)

@@ -1,3 +1,4 @@
+import logging
 from enum import Enum, unique
 from datetime import date, datetime
 from typing import List, Optional
@@ -14,6 +15,10 @@ from companies import InvalidCNPJException, CompaniesAccessInterface
 from config.config import load_configuration
 from themed_excerpts import ThemedExcerptAccessInterface, ThemedExcerptAccessInterface
 from themed_excerpts.themed_excerpt_access import ThemedExcerptRequest
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 config = load_configuration()
 
@@ -288,6 +293,9 @@ async def get_gazettes(
         sort_by=sort_by.value,
     )
     gazettes_count, gazettes = app.gazettes.get_gazettes(gazette_request)
+    logger.info("DALE")
+    logger.warning("CUIDADO")
+    logger.error("EITA")
     return {
         "total_gazettes": gazettes_count,
         "gazettes": gazettes,
